@@ -1,511 +1,694 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>Дневник & Задания — WebGL версия</title>
-
-  <!--
-  Финальный единый файл. Все объяснения находятся в комментариях внутри кода и не видны на странице.
-  - Тема: чёрный фон, кислотный градиентный текст (зелёный->светлый).
-  - 3D шар: реализован через Three.js (WebGL). Помещён в кейс 600x300 px для iPhone 12 Pro,
-    адаптируется в процентах для других устройств.
-  - Регистрация: отдельный экран, после регистрации показывается основной интерфейс.
-  - Шкала уровня: показывает "Уровень X — Y / 300 баллов".
-  - Формула расчёта очков: Result = N * (D^2 / T) — используется при создании задания.
-  -->
-
-  <style>
-  /* =========================
-     CSS СТИЛИ — комментированные для разработчика
-     Все комментарии скрыты от посетителя.
-     ========================= */
-
-  :root{
-    --bg:#000000; /* чисто чёрный фон */
-    --card:#0b0b0c;
-    --muted:#9aa4b2;
-    /* кислотный градиент — используется в тексте через фон-клип */
-    --acid1:#8cff3b; /* кислый зелёный */
-    --acid2:#d4ff9f; /* светлый */
-    --accent:#1db954;
-    --radius:12px;
-  }
-  /* базовые стили */
-  *{box-sizing:border-box;margin:0;padding:0;font-family:Inter, Roboto, Arial, sans-serif}
-  html,body{height:100%;background:var(--bg);color:#e6ffe6;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
-  /* центральный контейнер — адаптивный */
-  .root{max-width:1200px;margin:12px auto;padding:12px;display:flex;gap:12px;align-items:flex-start}
-  /* регистрация — сползает на отдельный экран */
-  .screen{width:100%;min-height:80vh;display:none}
-  .screen.active{display:block}
-  /* Регистрация: центральная карточка */
-  .reg-card{max-width:420px;margin:40px auto;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:18px;border-radius:10px;border:1px solid rgba(255,255,255,0.03);}
-  .reg-card h1{font-family:Georgia, 'Times New Roman', serif;font-size:28px;text-align:center;margin-bottom:8px;
-    /* градиентный кислотный текст */
-    background: linear-gradient(90deg, var(--acid1), var(--acid2));
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-  }
-  .reg-card input{width:100%;padding:10px;margin:8px 0;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:#e6ffe6}
-  .reg-card .row{display:flex;gap:8px}
-  .btn{background:var(--accent);color:#001;border:none;padding:10px 12px;border-radius:8px;cursor:pointer;font-weight:700}
-  .btn.ghost{background:transparent;color:var(--acid1);border:1px solid rgba(255,255,255,0.04)}
-
-  /* Основной интерфейс: две колонки — левая (аватар) и правая (контент) */
-  .app{display:flex;width:100%;gap:12px;align-items:flex-start}
-  .left{width:320px;min-width:260px;background:transparent;display:flex;flex-direction:column;align-items:center;gap:12px}
-  .center{flex:1;background:transparent;display:flex;flex-direction:column;gap:12px}
-
-  /* Кейс для 3D-шара: фиксированный размер 600x300px для iPhone 12 Pro — используем CSS переменные и масштабируем */
-  .avatar-case{width:600px;height:300px;max-width:100%;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:12px;padding:12px;display:flex;align-items:center;justify-content:center;position:relative;border:1px solid rgba(255,255,255,0.03)}
-  /* подставка (platform) */
-  .platform{position:absolute;left:50%;transform:translateX(-50%);bottom:8px;width:60%;height:14px;background:linear-gradient(90deg,#0a0a0a,#111);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.7)}
-
-  /* профиль сверху */
-  .profile{width:100%;display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px}
-  .username{font-weight:800;font-size:18px;background: linear-gradient(90deg, var(--acid1), var(--acid2));-webkit-background-clip:text;background-clip:text;color:transparent}
-  .level-bar{width:100%;background:rgba(255,255,255,0.04);height:18px;border-radius:9px;overflow:hidden;border:1px solid rgba(255,255,255,0.03)}
-  .level-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--acid1),var(--acid2));display:flex;align-items:center;justify-content:center;color:#001;font-weight:700;font-size:12px}
-  .points{font-size:13px;color:var(--acid2)}
-
-  /* Меню вкладок */
-  .tabs{display:flex;gap:8px;background:rgba(255,255,255,0.02);padding:8px;border-radius:8px}
-  .tabs button{flex:1;padding:10px;border-radius:8px;border:none;background:transparent;color:var(--acid2);cursor:pointer;font-weight:700}
-  .tabs button.active{background:linear-gradient(90deg,var(--acid1),var(--acid2));color:#001}
-
-  /* Панели */
-  .panel{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:12px;border-radius:10px;min-height:240px;border:1px solid rgba(255,255,255,0.03)}
-  .diary-text{width:100%;height:45vh;border:2px solid rgba(255,255,255,0.03);border-radius:8px;padding:12px;background:#030303;color:var(--acid2);resize:vertical;font-size:16px;line-height:1.4}
-  .task-form{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-  .task-form input,.task-form select{padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:var(--acid2)}
-
-  .task-list{margin-top:12px;display:flex;flex-direction:column;gap:8px;max-height:40vh;overflow:auto}
-  .task{display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:8px;background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.005));border:1px solid rgba(255,255,255,0.02)}
-  .checkbox{width:30px;height:30px;border-radius:6px;border:2px solid rgba(255,255,255,0.04);display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:900;color:var(--acid2)}
-  .checkbox.done{background:var(--acid1);color:#001;border-color:transparent}
-
-  /* адаптивность: для мобильных уменьшаем левую колонку и размер кейса (процентно) */
-  @media (max-width:900px){
-    .root{padding:8px}
-    .app{flex-direction:column}
-    .left{width:100%;order:1;display:flex;align-items:center}
-    .avatar-case{height:300px;width:320px} /* scaled for small screens */
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Приложение — регистрация и лидерборд</title>
+<style>
+  :root {
+    --bg: #000;
+    --acid1: #8cff3b;
+    --acid2: #d4ff9f;
+    --fire1: #ff5a00;
+    --fire2: #ff9900;
+    --muted: #9aa4b2;
+    --card: #0b0b0b;
   }
 
-  </style>
+  html,body {
+    height:100%;
+    margin:0;
+    background:var(--bg);
+    color:var(--acid2);
+    font-family: Inter, "Trebuchet MS", Arial, sans-serif;
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+  }
+
+  .screen { display:none; width:100vw; height:100vh; position:relative; overflow:hidden; }
+  .screen.active { display:block; }
+
+  #screenRegister { display:flex; align-items:flex-start; justify-content:center; }
+
+  #regStage {
+    position:relative;
+    left:50%;
+    transform:translateX(-50%) scale(1);
+    transform-origin:50% 0;
+    width:min(1200px,96vw);
+    height:100vh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:flex-start;
+    gap:5vh;
+    padding-top:0;
+    box-sizing:border-box;
+  }
+
+  #welcomeBlock { width:min(1000px,90%); display:flex; align-items:center; justify-content:center; padding:0 12px; }
+  #welcomeText {
+    margin:0;
+    font-weight:900;
+    line-height:1;
+    letter-spacing:-0.02em;
+    font-size:clamp(36px, 8vw, 160px);
+    background: linear-gradient(180deg, var(--acid1) 0%, #001100 80%);
+    -webkit-background-clip:text;
+    background-clip:text;
+    color:transparent;
+    text-shadow:3px 3px 6px rgba(140,255,59,0.9);
+    text-align:center;
+    width:100%;
+  }
+
+  #btnStart {
+    width:clamp(260px,40vw,490px);
+    height:clamp(48px,7vh,172px);
+    border:5px solid #006600;
+    border-radius:30px;
+    color:var(--acid1);
+    font-size:clamp(16px,3.5vw,48px);
+    font-weight:800;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+    transition:transform .12s ease, background .12s ease;
+    background:transparent;
+  }
+  #btnStart:active { transform:scale(.98); }
+
+  #langWrap { position:fixed; top:12px; right:12px; display:flex; gap:10px; z-index:9999; }
+
+  .fire-btn {
+    border:none;
+    border-radius:12px;
+    padding:8px 12px;
+    font-weight:900;
+    cursor:pointer;
+    color:#fff;
+    background:linear-gradient(180deg, var(--fire1) 0%, var(--fire2) 45%, #660000 100%);
+    box-shadow:0 0 10px rgba(255,120,0,0.6), inset 0 -6px 14px rgba(0,0,0,0.35);
+    text-shadow:0 2px 6px rgba(0,0,0,0.6);
+    outline:none;
+    border:3px solid rgba(255,160,30,0.85);
+    animation:ember 2.2s infinite linear;
+  }
+  @keyframes ember {
+    0%   { filter:brightness(1) drop-shadow(0 0 6px rgba(255,120,0,0.6)); transform:translateY(0) scale(1); }
+    50%  { filter:brightness(1.08) drop-shadow(0 0 14px rgba(255,200,60,0.9)); transform:translateY(-3px) scale(1.02); }
+    100% { filter:brightness(1) drop-shadow(0 0 6px rgba(255,120,0,0.6)); transform:translateY(0) scale(1); }
+  }
+  .fire-btn:active { transform:scale(.98); animation:none; filter:brightness(.95); }
+
+  #zoomControls {
+    position:fixed;
+    right:18px;
+    bottom:18px;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    z-index:9999;
+  }
+  #zoomControls button {
+    width:48px;
+    height:48px;
+    border-radius:8px;
+    border:none;
+    background:rgba(255,255,255,0.06);
+    color:#fff;
+    font-size:20px;
+    cursor:pointer;
+  }
+
+  #regFormOverlay {
+    display:none;
+    position:fixed;
+    left:50%;
+    top:50%;
+    transform:translate(-50%,-50%);
+    width:min(1000px,92vw);
+    height:min(860px,92vh);
+    background:rgba(0,0,0,0.95);
+    border:2px solid var(--acid1);
+    border-radius:18px;
+    z-index:2000;
+    padding:20px;
+    box-sizing:border-box;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:3vh;
+  }
+  .reg-input {
+    width:min(800px,86%);
+    height:calc(172/2532*100vh);
+    max-height:88px;
+    border:3px solid var(--acid1);
+    border-radius:12px;
+    background:transparent;
+    color:var(--acid1);
+    font-size:clamp(14px,2.8vw,34px);
+    padding:10px 16px;
+    outline:none;
+  }
+  .reg-input::placeholder { color:rgba(140,255,59,0.45); }
+
+  :focus { outline:3px solid rgba(140,255,59,0.12); outline-offset:2px; }
+
+  #screenApp { padding:18px; box-sizing:border-box; }
+  .topbar { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; }
+  .btn { background:linear-gradient(90deg,var(--acid1),var(--acid2)); border:none; color:#001; padding:8px 12px; border-radius:8px; cursor:pointer; font-weight:800; }
+  .btn.secondary { background:transparent; color:var(--acid2); border:1px solid rgba(255,255,255,0.06); }
+
+  .card { background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border-radius:12px; padding:12px; border:1px solid rgba(255,255,255,0.03); color:var(--acid2); }
+
+  #leaderboardList { display:flex; flex-direction:column; gap:8px; max-height:60vh; overflow:auto; }
+  .leader-row { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:8px; border-radius:8px; background:linear-gradient(180deg, rgba(255,255,255,0.008), rgba(255,255,255,0.006)); border:1px solid rgba(255,255,255,0.02); }
+
+  @media (max-width:700px) { #welcomeText { font-size:clamp(28px,12vw,96px); } }
+
+</style>
 </head>
 <body>
-  <!-- =========================
-       HTML Структура
-       Экран регистрации сначала, затем основной интерфейс (отдельные экраны)
-       ========================= -->
 
-  <!-- ЭКРАН РЕГИСТРАЦИИ/ВХОДА -->
-  <div id="screenRegister" class="screen active">
-    <div class="reg-card" role="region" aria-label="Регистрация">
-      <h1>Добро пожаловать</h1>
-      <p style="text-align:center;color:var(--muted)">Создайте аккаунт или войдите</p>
-      <input id="inputUsername" placeholder="Username" autocomplete="off">
-      <input id="inputEmail" placeholder="Email" autocomplete="off">
-      <input id="inputPassword" placeholder="Password" type="password" autocomplete="new-password">
-      <div class="row" style="margin-top:8px">
-        <button id="btnRegister" class="btn">Зарегистрироваться</button>
-        <button id="btnLogin" class="btn ghost">Войти</button>
-      </div>
-      <div style="margin-top:10px;color:var(--muted);font-size:13px">Данные хранятся локально в вашем браузере. Для общего доступа подключите Supabase (см. инструкцию).</div>
+<div id="screenRegister" class="screen active" aria-hidden="false">
+
+  <div id="langWrap">
+    <button id="langRu" class="fire-btn" data-lang="ru" aria-label="Русский">Ru</button>
+    <button id="langEn" class="fire-btn" data-lang="en" aria-label="English">Eng</button>
+  </div>
+
+  <div id="regStage" role="region" aria-label="Регистрация">
+    <div style="height:calc(860/2532*100vh);"></div>
+
+    <div id="welcomeBlock" class="card" style="text-align:center;">
+      <h1 id="welcomeText">Welcome</h1>
+      <p id="subText" style="color:var(--muted);margin-top:8px;">Создайте аккаунт или войдите</p>
+    </div>
+
+    <div id="btnStart" role="button" tabindex="0" aria-pressed="false">Зарегистрироваться</div>
+
+    <div style="flex:1;"></div>
+  </div>
+
+  <div id="zoomControls" aria-hidden="true">
+    <button id="zoomIn" aria-label="Увеличить">+</button>
+    <button id="zoomOut" aria-label="Уменьшить">−</button>
+    <button id="zoomReset" aria-label="Сбросить">◯</button>
+  </div>
+
+  <div id="regFormOverlay" role="dialog" aria-modal="true" aria-hidden="true">
+    <button id="closeReg" aria-label="Закрыть" style="position:absolute;right:12px;top:12px;background:transparent;border:none;color:#fff;font-size:22px;cursor:pointer">✕</button>
+
+    <input id="regUsername" class="reg-input" placeholder="Имя пользователя" aria-label="Имя пользователя" />
+    <input id="regEmail" class="reg-input" placeholder="Эл. почта" type="email" aria-label="Эл. почта" />
+    <input id="regPassword" class="reg-input" placeholder="Пароль" type="password" aria-label="Пароль" />
+
+    <div id="regSubmit" role="button" tabindex="0" style="width:min(800px,86%);height:calc(200/2532*100vh);background:var(--acid1);color:#000;font-size:clamp(16px,3vw,34px);font-weight:800;display:flex;align-items:center;justify-content:center;border-radius:12px;cursor:pointer">
+      Зарегистрироваться
     </div>
   </div>
 
-  <!-- ОСНОВНОЙ ЭКРАН ПРИЛОЖЕНИЯ -->
-  <div id="screenApp" class="screen">
-    <div class="root">
-      <div class="app">
-        <!-- ЛЕВАЯ КОЛОНКА: профиль и 3D шар -->
-        <div class="left">
-          <div class="profile">
-            <div id="usernameLabel" class="username">—</div>
-            <div class="level-bar" title="Прогресс до следующего уровня">
-              <div id="levelFill" class="level-fill">0 / 300</div>
-            </div>
-            <div id="pointsBox" class="points">Очки: 0</div>
-          </div>
+</div>
 
-          <!-- кейс для WebGL шарика — размер 600x300 (будет масштабироваться) -->
-          <div class="avatar-case" id="avatarCase">
-            <!-- Канва для three.js будет помещена сюда (JS создаст <canvas>) -->
-            <div class="platform" aria-hidden="true"></div>
-          </div>
-        </div>
+<div id="screenApp" class="screen" aria-hidden="true">
+  <div class="topbar">
+    <div style="display:flex;gap:12px;align-items:center;">
+      <div id="usernameLabel" style="font-weight:900">—</div>
+      <div id="pointsLabel" style="color:var(--muted)">Очки: 0</div>
+      <div id="levelLabel" style="color:var(--muted)">Уровень: 0</div>
+    </div>
 
-        <!-- ЦЕНТР: вкладки и контент -->
-        <div class="center">
-          <div class="tabs" role="tablist">
-            <button id="tabDiary" class="active">Дневник</button>
-            <button id="tabTasks">Задания</button>
-          </div>
-
-          <div id="panelDiary" class="panel">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-              <div id="diaryDate" style="font-weight:700">—</div>
-              <div id="diaryStatus" style="color:var(--muted)">—</div>
-            </div>
-            <textarea id="diaryInput" class="diary-text" placeholder="Пишите дневник..."></textarea>
-            <div style="margin-top:8px;display:flex;gap:8px">
-              <button id="btnDiarySave" class="btn">Сохранить</button>
-              <button id="btnDiaryLock" class="btn ghost">Закончить писать</button>
-            </div>
-            <h3 style="margin-top:12px;color:var(--acid2)">Архив</h3>
-            <div id="diaryArchive" style="display:flex;flex-direction:column;gap:6px;max-height:18vh;overflow:auto"></div>
-          </div>
-
-          <div id="panelTasks" class="panel" style="display:none">
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <button id="btnCreate" class="btn">Создать задание</button>
-              <button id="btnEval" class="btn ghost">Оценить</button>
-              <button id="btnList" class="btn ghost">Все задания</button>
-            </div>
-
-            <!-- оценка -->
-            <div id="evalArea" style="margin-top:12px;display:none">
-              <div style="display:flex;gap:8px;flex-wrap:wrap">
-                <label>Необходимость (N)
-                  <select id="evalN"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
-                </label>
-                <label>Важность (D)
-                  <select id="evalD"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
-                </label>
-                <label>Время (T, мин)
-                  <select id="evalT"><option>1</option><option>5</option><option>15</option><option>30</option><option>60</option></select>
-                </label>
-                <button id="calcBtn" class="btn ghost">Рассчитать</button>
-              </div>
-              <div style="margin-top:8px">Результат: <span id="evalResult">—</span></div>
-            </div>
-
-            <!-- создание задания -->
-            <div id="createArea" style="margin-top:12px;display:none">
-              <div class="task-form">
-                <input id="taskTitle" placeholder="Название">
-                <select id="taskCat"><option value="body">Тело</option><option value="mind">Ум</option><option value="soul">Душа</option><option value="routine">Рутина</option></select>
-                <select id="taskN"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
-                <select id="taskD"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
-                <select id="taskT"><option>1</option><option>5</option><option>15</option><option>30</option><option>60</option></select>
-                <button id="addTaskBtn" class="btn">Добавить</button>
-              </div>
-            </div>
-
-            <div style="margin-top:12px">
-              <div style="display:flex;justify-content:space-between;align-items:center">
-                <div id="tasksLabel" style="font-weight:700">Задания сегодня</div>
-                <select id="daySelect"></select>
-              </div>
-              <div id="tasksList" class="task-list"></div>
-            </div>
-          </div>
-        </div> <!-- center -->
-      </div> <!-- app -->
-    </div> <!-- root -->
-  </div> <!-- screenApp -->
-
-  <!-- МОДАЛ -->
-  <div id="modal" style="display:none;position:fixed;left:0;top:0;right:0;bottom:0;align-items:center;justify-content:center;background:rgba(0,0,0,0.6)">
-    <div style="background:#0b0b0b;padding:16px;border-radius:10px;max-width:420px;margin:auto;color:var(--acid2)" id="modalBox"></div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button id="btnLeaderboard" class="btn">Leaderboard</button>
+      <button id="btnLogout" class="btn secondary">Выйти</button>
+    </div>
   </div>
 
-  <!-- Подключаем Three.js из CDN для WebGL шара -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r152/three.min.js"></script>
-  <script>
-  /* =========================
-     JavaScript — логика приложения
-     Комментарии подробно объясняют каждую часть.
-     ========================= */
+  <div style="display:flex;gap:12px;align-items:flex-start;">
+    <div style="flex:1;max-width:520px;">
+      <div class="card" style="margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div style="font-weight:800">Задания</div>
+          <button id="btnCreateTask" class="btn secondary">Создать</button>
+        </div>
 
-  // -------------------- Небольшая "локальная БД" --------------------
-  const DB_KEY = "webgl_diary_v1";
-  function loadDB(){ try{ return JSON.parse(localStorage.getItem(DB_KEY)||"{}"); }catch(e){ return {}; } }
-  function saveDB(db){ localStorage.setItem(DB_KEY, JSON.stringify(db)); }
-  let db = loadDB();
-  db.users = db.users || {}; db.meta = db.meta || {}; saveDB(db);
+        <div id="tasksList" style="margin-top:12px;display:flex;flex-direction:column;gap:8px;max-height:50vh;overflow:auto"></div>
+      </div>
+    </div>
 
-  // -------------------- UI: переключение экранов --------------------
-  const screenRegister = document.getElementById('screenRegister');
-  const screenApp = document.getElementById('screenApp');
+    <div style="width:360px;">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div style="font-weight:800">Top (быстрый просмотр)</div>
+          <div style="color:var(--muted);font-size:13px">Real-time</div>
+        </div>
+        <div id="leaderboardPreview" style="display:flex;flex-direction:column;gap:8px;max-height:70vh;overflow:auto"></div>
+      </div>
+    </div>
+  </div>
+</div>
 
-  function showRegister(){ screenRegister.classList.add('active'); screenApp.classList.remove('active'); }
-  function showApp(){ screenRegister.classList.remove('active'); screenApp.classList.add('active'); }
+<div id="leaderboardScreen" class="screen" aria-hidden="true" style="display:none;padding:18px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+    <div style="font-weight:900">Leaderboard — Топ игроков</div>
+    <div>
+      <button id="backToApp" class="btn secondary">Назад</button>
+    </div>
+  </div>
 
-  // -------------------- Регистрация/Вход (локально) --------------------
-  const inputUsername = document.getElementById('inputUsername');
-  const inputEmail = document.getElementById('inputEmail');
-  const inputPassword = document.getElementById('inputPassword');
-  const btnRegister = document.getElementById('btnRegister');
-  const btnLogin = document.getElementById('btnLogin');
+  <div id="leaderboardList" class="card"></div>
+</div>
 
-  function currentUser(){ return db.meta.currentUser || null; }
-  function setCurrentUser(id){ db.meta.currentUser = id; saveDB(db); }
+<div style="display:none;">
+  <input id="inputUsername" />
+  <input id="inputEmail" />
+  <input id="inputPassword" />
+  <button id="btnRegister" style="display:none">register</button>
+</div>
 
-  btnRegister.addEventListener('click', ()=>{
-    const username = inputUsername.value.trim();
-    const email = inputEmail.value.trim();
-    const password = inputPassword.value;
-    if(!username || !email || !password){ alert('Заполните все поля'); return; }
-    const id = 'u_'+Date.now();
-    db.users[id] = { id, username, email, password, points:0, level:0, diary:{}, tasks:{} };
-    setCurrentUser(id);
-    saveDB(db);
-    afterLoginInit();
-    showApp();
-  });
+<script type="module">
+import {{ createClient }} from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
 
-  btnLogin.addEventListener('click', ()=>{
-    const email = inputEmail.value.trim();
-    const password = inputPassword.value;
-    const ids = Object.keys(db.users);
-    for(const id of ids){
-      const u = db.users[id];
-      if(u.email === email && u.password === password){
-        setCurrentUser(id);
-        afterLoginInit();
-        showApp();
+const SUPABASE_URL = "https://dbkzfwxtfeowtjftdgke.supabase.co";
+const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia3pmd3h0ZmVvd3RqZnRkZ2tlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA3NDc1MzYsImV4cCI6MjA3NjMyMzUzNn0.yXf9Gq9LUP9_4M9sfLntpsYECrDxWxSUpQzMfMYcZAM";
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
+
+const DICT = {
+  welcome: { ru: 'Добро пожаловать', en: 'Welcome' },
+  register: { ru: 'Зарегистрироваться', en: 'Register' },
+  username_ph: { ru: 'Имя пользователя', en: 'Username' },
+  email_ph: { ru: 'Эл. почта', en: 'Email' },
+  password_ph: { ru: 'Пароль', en: 'Password' },
+  fill_fields: { ru: 'Заполните все поля', en: 'Fill all fields' },
+  registered_local: { ru: 'Зарегистрировано локально', en: 'Registered locally' },
+  registration_error: { ru: 'Ошибка регистрации', en: 'Registration error' }
+};
+
+const el = {
+  langRu: document.getElementById('langRu'),
+  langEn: document.getElementById('langEn'),
+  welcomeText: document.getElementById('welcomeText'),
+  subText: document.getElementById('subText'),
+  btnStart: document.getElementById('btnStart'),
+  regStage: document.getElementById('regStage'),
+  regFormOverlay: document.getElementById('regFormOverlay'),
+  closeReg: document.getElementById('closeReg'),
+  regUsername: document.getElementById('regUsername'),
+  regEmail: document.getElementById('regEmail'),
+  regPassword: document.getElementById('regPassword'),
+  regSubmit: document.getElementById('regSubmit'),
+  zoomIn: document.getElementById('zoomIn'),
+  zoomOut: document.getElementById('zoomOut'),
+  zoomReset: document.getElementById('zoomReset'),
+  screenApp: document.getElementById('screenApp'),
+  usernameLabel: document.getElementById('usernameLabel'),
+  pointsLabel: document.getElementById('pointsLabel'),
+  levelLabel: document.getElementById('levelLabel'),
+  btnLeaderboard: document.getElementById('btnLeaderboard'),
+  btnLogout: document.getElementById('btnLogout'),
+  tasksList: document.getElementById('tasksList'),
+  btnCreateTask: document.getElementById('btnCreateTask'),
+  leaderboardPreview: document.getElementById('leaderboardPreview'),
+  leaderboardScreen: document.getElementById('leaderboardScreen'),
+  leaderboardList: document.getElementById('leaderboardList'),
+  backToApp: document.getElementById('backToApp'),
+};
+
+let state = {
+  user: null,
+  scale: 1,
+  minScale: 0.6,
+  maxScale: 2.0,
+  step: 0.1,
+};
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('leaderboardScreen').style.display = 'none';
+  const target = document.getElementById(id);
+  if (target) {
+    target.classList.add('active');
+  }
+}
+
+function showLeaderboardScreen() {
+  document.getElementById('leaderboardScreen').style.display = 'block';
+  document.getElementById('leaderboardScreen').classList.add('active');
+  document.getElementById('screenApp').classList.remove('active');
+}
+
+function hideLeaderboardScreen() {
+  document.getElementById('leaderboardScreen').style.display = 'none';
+  document.getElementById('leaderboardScreen').classList.remove('active');
+  document.getElementById('screenApp').classList.add('active');
+}
+
+function setLang(lang) {
+  localStorage.setItem('siteLang', lang);
+  document.documentElement.setAttribute('data-lang', lang);
+  el.welcomeText.textContent = DICT.welcome[lang] || DICT.welcome.en;
+  el.btnStart.textContent = DICT.register[lang] || DICT.register.en;
+  el.regSubmit.textContent = DICT.register[lang] || DICT.register.en;
+  el.regUsername.placeholder = DICT.username_ph[lang];
+  el.regEmail.placeholder = DICT.email_ph[lang];
+  el.regPassword.placeholder = DICT.password_ph[lang];
+}
+
+const savedLang = localStorage.getItem('siteLang') || (navigator.language && navigator.language.startsWith('ru') ? 'ru' : 'en');
+setLang(savedLang);
+el.langRu.addEventListener('click', () => setLang('ru'));
+el.langEn.addEventListener('click', () => setLang('en'));
+
+function applyScale() {
+  el.regStage.style.transform = 'translateX(-50%) scale(' + state.scale + ')';
+}
+if (el.zoomIn) el.zoomIn.addEventListener('click', () => { state.scale = Math.min(state.maxScale, +(state.scale + state.step).toFixed(2)); applyScale(); });
+if (el.zoomOut) el.zoomOut.addEventListener('click', () => { state.scale = Math.max(state.minScale, +(state.scale - state.step).toFixed(2)); applyScale(); });
+if (el.zoomReset) el.zoomReset.addEventListener('click', () => { state.scale = 1; applyScale(); });
+
+let pointerOver = false;
+if (el.regStage) {
+  el.regStage.addEventListener('mouseenter', () => pointerOver = true);
+  el.regStage.addEventListener('mouseleave', () => pointerOver = false);
+}
+window.addEventListener('wheel', (e) => {
+  if(!pointerOver) return;
+  e.preventDefault();
+  if(e.deltaY < 0) state.scale = Math.min(state.maxScale, +(state.scale + state.step).toFixed(2));
+  else state.scale = Math.max(state.minScale, +(state.scale - state.step).toFixed(2));
+  applyScale();
+}, { passive:false });
+
+let lastDist = null;
+window.addEventListener('touchmove', (e) => {
+  if(e.touches && e.touches.length == 2) {
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const dist = Math.hypot(dx,dy);
+    if(lastDist) {
+      const diff = dist - lastDist;
+      if(Math.abs(diff) > 6) {
+        state.scale = Math.max(state.minScale, Math.min(state.maxScale, +(state.scale + diff*0.001).toFixed(2)));
+        applyScale();
+      }
+    }
+    lastDist = dist;
+    e.preventDefault();
+  } else lastDist = null;
+}, { passive:false });
+
+el.btnStart.addEventListener('click', () => {
+  el.regFormOverlay.style.display = 'flex';
+  el.regFormOverlay.setAttribute('aria-hidden', 'false');
+  el.regUsername.focus();
+});
+
+el.closeReg.addEventListener('click', () => {
+  el.regFormOverlay.style.display = 'none';
+  el.regFormOverlay.setAttribute('aria-hidden', 'true');
+});
+
+function enterAppWithUser(userProfile) {
+  state.user = userProfile;
+  el.usernameLabel.textContent = userProfile.username || userProfile.email || '—';
+  el.pointsLabel.textContent = 'Очки: ' + (userProfile.points || 0);
+  el.levelLabel.textContent = 'Уровень: ' + (userProfile.level || 0);
+
+  document.getElementById('screenRegister').classList.remove('active');
+  document.getElementById('screenRegister').setAttribute('aria-hidden', 'true');
+  document.getElementById('screenApp').classList.add('active');
+  document.getElementById('screenApp').setAttribute('aria-hidden', 'false');
+
+  loadTasks();
+  loadLeaderboardPreview();
+}
+
+// Registration with Supabase
+el.regSubmit.addEventListener('click', async () => {
+  const username = el.regUsername.value.trim();
+  const email = el.regEmail.value.trim();
+  const password = el.regPassword.value;
+  const lang = localStorage.getItem('siteLang') || 'ru';
+
+  if(!username || !email || !password) {
+    alert(DICT.fill_fields[lang]);
+    return;
+  }
+
+  try {
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp(
+      { email, password },
+      { data: { username } }
+    );
+    if(signUpError) {
+      console.warn('signUpError', signUpError);
+    }
+
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+    if(signInError) {
+      console.warn('signInError', signInError);
+    }
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    if(sessionData && sessionData.session) {
+      const userId = sessionData.session.user.id;
+
+      try {
+        await supabase.from('profiles').upsert({ id: userId, username: username, email: email }, { returning: 'minimal' });
+      } catch (e) {
+        console.warn('profiles upsert failed', e);
+      }
+
+      const { data: profiles } = await supabase.from('profiles').select('*').eq('id', userId).limit(1).single();
+      if(profiles) {
+        enterAppWithUser(profiles);
+        el.regFormOverlay.style.display = 'none';
+        return;
+      } else {
+        const local = { id: userId, username, email, points:0, level:0 };
+        enterAppWithUser(local);
+        el.regFormOverlay.style.display = 'none';
         return;
       }
     }
-    alert('Пользователь не найден или неверный пароль');
-  });
 
-  // -------------------- Профиль: обновление UI --------------------
-  const usernameLabel = document.getElementById('usernameLabel');
-  const levelFill = document.getElementById('levelFill');
-  const pointsBox = document.getElementById('pointsBox');
+    const id = 'u_' + Date.now();
+    const users = JSON.parse(localStorage.getItem('demo_users_v1') || '{}');
+    users[id] = { id, username, email, password, points:0, level:0, diary:{}, tasks:{} };
+    localStorage.setItem('demo_users_v1', JSON.stringify(users));
+    alert(DICT.registered_local[lang]);
+    el.regFormOverlay.style.display = 'none';
+    enterAppWithUser(users[id]);
 
-  function refreshProfileUI(){
-    const uid = currentUser();
-    if(!uid){ usernameLabel.textContent = '—'; levelFill.style.width='0%'; levelFill.textContent='0 / 300'; pointsBox.textContent='Очки: 0'; return; }
-    const u = db.users[uid];
-    usernameLabel.textContent = u.username;
-    const pts = u.points || 0;
-    const lvl = Math.floor(pts / 300);
-    u.level = lvl;
-    const progress = Math.min(100, Math.round((pts % 300) / 3)); // % внутри уровня (0..100)
-    levelFill.style.width = progress + '%';
-    levelFill.textContent = `Уровень ${lvl} — ${pts} / 300`;
-    pointsBox.textContent = 'Очки: ' + pts;
-    saveDB(db);
+  } catch (err) {
+    console.error(err);
+    alert(DICT.registration_error[localStorage.getItem('siteLang') || 'ru']);
   }
+});
 
-  // -------------------- Дата по Киеву --------------------
-  function kyivNow(){ return new Date(new Date().toLocaleString('ru-RU',{timeZone:'Europe/Kyiv'})); }
-  function kyivKey(d=kyivNow()){ const Y=d.getFullYear(), M=String(d.getMonth()+1).padStart(2,'0'), D=String(d.getDate()).padStart(2,'0'); return `${D}.${M}.${Y}`; }
-
-  // -------------------- Дневник --------------------
-  const diaryInput = document.getElementById('diaryInput');
-  const diaryDate = document.getElementById('diaryDate');
-  const diaryStatus = document.getElementById('diaryStatus');
-  const diaryArchive = document.getElementById('diaryArchive');
-  const btnDiarySave = document.getElementById('btnDiarySave');
-  const btnDiaryLock = document.getElementById('btnDiaryLock');
-
-  function openDiary(){
-    const uid = currentUser(); if(!uid){ showRegister(); return; }
-    showPanel('panelDiary');
-    const key = kyivKey();
-    diaryDate.textContent = key;
-    const u = db.users[uid]; u.diary = u.diary || {};
-    const entry = u.diary[key] || { text:'', finished:false };
-    diaryInput.value = entry.text || ''; diaryInput.disabled = !!entry.finished; diaryStatus.textContent = entry.finished ? 'Запись завершена' : '';
-    renderDiaryArchive();
-  }
-
-  btnDiarySave.addEventListener('click', ()=>{ const uid = currentUser(); if(!uid){ alert('Войдите'); return; } const key=kyivKey(); const u=db.users[uid]; u.diary = u.diary||{}; u.diary[key] = u.diary[key]||{text:'',finished:false}; u.diary[key].text = diaryInput.value; saveDB(db); alert('Сохранено'); renderDiaryArchive(); });
-  btnDiaryLock.addEventListener('click', ()=>{ const uid = currentUser(); if(!uid){ alert('Войдите'); return; } const key=kyivKey(); const u=db.users[uid]; u.diary = u.diary||{}; u.diary[key] = u.diary[key]||{text:'',finished:false}; u.diary[key].finished = true; saveDB(db); openDiary(); });
-
-  function renderDiaryArchive(){ diaryArchive.innerHTML=''; const uid=currentUser(); if(!uid) return; const u=db.users[uid]; u.diary = u.diary||{}; const dates = Object.keys(u.diary).sort((a,b)=>{ const pa=a.split('.').reverse().join('-'), pb=b.split('.').reverse().join('-'); return pa < pb ? 1 : -1; }); for(const d of dates){ const it=u.diary[d]; const el=document.createElement('div'); el.style.padding='8px'; el.style.borderRadius='8px'; el.style.background='rgba(255,255,255,0.02)'; el.style.cursor='pointer'; el.textContent = d + (it.finished? ' — завершено' : ''); el.addEventListener('click', ()=>{ diaryDate.textContent=d; diaryInput.value=it.text||''; diaryInput.disabled = !!it.finished; diaryStatus.textContent = it.finished ? 'Запись завершена' : ''; }); diaryArchive.appendChild(el); } }
-
-  // -------------------- Задания --------------------
-  const panelDiaryBtn = document.getElementById('tabDiary');
-  const panelTasksBtn = document.getElementById('tabTasks');
-  const panelDiary = document.getElementById('panelDiary');
-  const panelTasks = document.getElementById('panelTasks');
-
-  panelDiaryBtn.addEventListener('click', ()=>{ showPanel('panelDiary'); });
-  panelTasksBtn.addEventListener('click', ()=>{ showPanel('panelTasks'); });
-
-  function showPanel(id){ panelDiary.style.display = (id==='panelDiary') ? 'block' : 'none'; panelTasks.style.display = (id==='panelTasks') ? 'block' : 'none'; panelDiaryBtn.classList.toggle('active', id==='panelDiary'); panelTasksBtn.classList.toggle('active', id==='panelTasks'); }
-
-  // задачи - элементы
-  const btnCreate = document.getElementById('btnCreate');
-  const btnEval = document.getElementById('btnEval');
-  const btnList = document.getElementById('btnList');
-  const evalArea = document.getElementById('evalArea');
-  const createArea = document.getElementById('createArea');
-  const calcBtn = document.getElementById('calcBtn');
-  const evalResult = document.getElementById('evalResult');
-  const addTaskBtn = document.getElementById('addTaskBtn');
-  const tasksList = document.getElementById('tasksList');
-  const tasksLabel = document.getElementById('tasksLabel');
-  const daySelect = document.getElementById('daySelect');
-
-  btnCreate.addEventListener('click', ()=>{ createArea.style.display = createArea.style.display === 'none' || createArea.style.display==='' ? 'block' : 'none'; evalArea.style.display='none'; });
-  btnEval.addEventListener('click', ()=>{ evalArea.style.display = evalArea.style.display === 'none' || evalArea.style.display==='' ? 'block' : 'none'; createArea.style.display='none'; });
-  btnList.addEventListener('click', ()=>{ showTasksForDay(kyivKey()); });
-
-  // формула расчёта: Result = N * (D^2 / T)
-  function calcScore(N,D,T){ N=Number(N); D=Number(D); T=Number(T)||1; let raw = N * ((D*D)/Math.max(1,T)); if(raw <= 0) raw = 0.01; raw = Math.min(raw, 1000); return Math.round(raw*100)/100; }
-
-  calcBtn.addEventListener('click', ()=>{ const N=document.getElementById('evalN').value; const D=document.getElementById('evalD').value; const T=document.getElementById('evalT').value; const res = calcScore(N,D,T); evalResult.textContent = res + ' баллов'; });
-
-  addTaskBtn.addEventListener('click', ()=>{
-    const uid = currentUser(); if(!uid){ alert('Войдите'); return; }
-    const title = document.getElementById('taskTitle').value.trim();
-    const cat = document.getElementById('taskCat').value;
-    const N = document.getElementById('taskN').value;
-    const D = document.getElementById('taskD').value;
-    const T = document.getElementById('taskT').value;
-    if(!title){ alert('Введите название'); return; }
-    const score = calcScore(N,D,T); const points = Math.round(score);
-    const task = { id:'t_'+Date.now(), title, cat, N:Number(N), D:Number(D), T:Number(T), score, points, done:false, created:Date.now() };
-    const key = kyivKey(); const u = db.users[uid]; u.tasks = u.tasks||{}; u.tasks[key] = u.tasks[key]||[]; u.tasks[key].push(task); saveDB(db);
-    document.getElementById('taskTitle').value='';
-    showTasksForDay(key); refreshProfileUI();
-  });
-
-  function showTasksForDay(dayKey){
-    const uid = currentUser(); if(!uid){ alert('Войдите'); return; }
-    const u = db.users[uid]; u.tasks = u.tasks||{}; daySelect.innerHTML='';
-    const dates = Object.keys(u.tasks).length ? Object.keys(u.tasks).sort((a,b)=>{ const pa=a.split('.').reverse().join('-'), pb=b.split('.').reverse().join('-'); return pa < pb ? 1 : -1; }) : [];
-    if(dates.length===0){ dates.push(kyivKey()); u.tasks[kyivKey()]=[]; saveDB(db); }
-    for(const d of dates){ const opt=document.createElement('option'); opt.value=d; opt.textContent=d; if(d===dayKey) opt.selected=true; daySelect.appendChild(opt); }
-    tasksLabel.textContent = 'Задания за: ' + dayKey;
-    tasksList.innerHTML='';
-    const list = u.tasks[dayKey] || [];
-    for(const t of list){
-      const card = document.createElement('div'); card.className='task';
-      const left = document.createElement('div'); left.style.display='flex'; left.style.alignItems='center'; left.style.gap='10px';
-      const cb = document.createElement('div'); cb.className='checkbox'; cb.textContent = t.done ? '✓' : '';
-      if(t.done) cb.classList.add('done');
-      cb.addEventListener('click', ()=>{ toggleDone(dayKey, t.id); });
-      const info = document.createElement('div'); info.innerHTML = `<div style="font-weight:800">${escapeHtml(t.title)}</div><div style="font-size:13px;color:var(--muted)">Категория: ${t.cat} • Баллы: ${t.points} • N:${t.N} D:${t.D} T:${t.T}</div>`;
-      left.appendChild(cb); left.appendChild(info);
-      const right = document.createElement('div'); const del=document.createElement('button'); del.className='btn ghost'; del.textContent='Удалить'; del.addEventListener('click', ()=>{ if(confirm('Удалить?')){ deleteTask(dayKey,t.id); } });
-      right.appendChild(del);
-      card.appendChild(left); card.appendChild(right);
-      tasksList.appendChild(card);
-    }
-  }
-
-  daySelect.addEventListener('change', ()=>{ showTasksForDay(daySelect.value); });
-
-  function deleteTask(dayKey, id){
-    const uid = currentUser(); const u = db.users[uid]; u.tasks[dayKey] = (u.tasks[dayKey]||[]).filter(x=>x.id!==id); saveDB(db); showTasksForDay(dayKey);
-  }
-
-  function toggleDone(dayKey, id){
-    const uid = currentUser(); const u = db.users[uid]; const task = (u.tasks[dayKey]||[]).find(x=>x.id===id); if(!task) return;
-    if(task.done){
-      task.done = false; u.points = Math.max(0, (u.points||0) - (task.points||0));
-      if((u.points||0) <= 0){
-        showModal('У вас 0 очков. Ты уверен, что хочешь продолжить?', 'Начать сначала', ()=>{ resetToRegister(); });
+// Auto-enter if session exists
+(async () => {
+  try {
+    const res = await supabase.auth.getSession();
+    if(res && res.data && res.data.session) {
+      const userId = res.data.session.user.id;
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).limit(1).single();
+      if(profile) {
+        enterAppWithUser(profile);
       }
-    } else {
-      task.done = true; u.points = (u.points||0) + (task.points||0);
     }
-    u.level = Math.floor((u.points||0)/300); saveDB(db); refreshProfileUI(); showTasksForDay(dayKey);
+  } catch(e) {
+    console.warn('session check failed', e);
   }
+})();
 
-  // -------------------- Модал --------------------
-  function showModal(text, actionText, actionFn){ const modal=document.getElementById('modal'); const box=document.getElementById('modalBox'); box.innerHTML = `<div style="margin-bottom:12px">${text}</div><div style="display:flex;gap:8px;justify-content:flex-end"><button id="mCancel" class="btn ghost">Отмена</button><button id="mAction" class="btn">${actionText}</button></div>`; modal.style.display='flex'; document.getElementById('mCancel').addEventListener('click', ()=>{ modal.style.display='none'; }); document.getElementById('mAction').addEventListener('click', ()=>{ modal.style.display='none'; actionFn(); }); }
+// Tasks
+async function loadTasks() {
+  try {
+    if(!state.user || !state.user.id) return;
+    const { data: tasks, error } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('owner_id', state.user.id)
+      .order('created_at', { ascending: false });
 
-  function resetToRegister(){ db.meta.currentUser = null; saveDB(db); showRegister(); refreshProfileUI(); }
-
-  // -------------------- Вспомогательные --------------------
-  function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
-
-  // -------------------- Инициализация приложения после логина --------------------
-  function afterLoginInit(){
-    refreshProfileUI();
-    openDiary();
-    showTasksForDay(kyivKey());
+    if(error) throw error;
+    renderTasks(tasks || []);
+  } catch (e) {
+    console.warn('loadTasks fallback', e);
+    const users = JSON.parse(localStorage.getItem('demo_users_v1') || '{}');
+    const tasks = (users[state.user.id] && users[state.user.id].tasks) ? Object.values(users[state.user.id].tasks) : [];
+    renderTasks(tasks);
   }
+}
 
-  // если уже был юзер — сразу войти
-  if(currentUser()){ afterLoginInit(); showApp(); } else { showRegister(); }
+function renderTasks(tasks) {
+  el.tasksList.innerHTML = '';
+  if(!tasks || tasks.length === 0) {
+    el.tasksList.innerHTML = '<div style="color:var(--muted)">Нет заданий</div>';
+    return;
+  }
+  tasks.forEach(t => {
+    const row = document.createElement('div');
+    row.className = 'leader-row';
+    const btnLabel = t.done ? 'Готово' : 'Выполнить';
+    const secondaryClass = t.done ? '' : 'secondary';
+    row.innerHTML = `
+      <div style="display:flex;gap:12px;align-items:center;">
+        <div style="font-weight:800">${t.title || '—'}</div>
+        <div style="font-size:13px;color:var(--muted)">+${t.points || 0} очк.</div>
+      </div>
+      <div>
+        <button data-id="${t.id}" class="btn ${secondaryClass}" data-done="${t.done ? '1':'0'}">${btnLabel}</button>
+      </div>
+    `;
+    el.tasksList.appendChild(row);
+  });
 
-  // -------------------- Three.js: 3D шар --------------------
-  // Комментарии: этот блок создаёт WebGL сцену, камеру, свет и сферу с нормалями,
-  // даёт пользователю возможность вращать шар мышью/тачем.
-  (function initThree(){
-    // контейнер для канвы
-    const container = document.getElementById('avatarCase');
-    // создаём сцену, камеру, рендерер
-    const scene = new THREE.Scene();
-    // камера с перспективой (основная для шарика)
-    const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
-    camera.position.z = 3.2;
-
-    // рендерер — включаем alpha для прозрачного фона внутри кейса
-    const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
-    renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.setPixelRatio(window.devicePixelRatio ? window.devicePixelRatio : 1);
-    // прикрепляем canvas в контейнер (очищаем сначала)
-    container.querySelectorAll('canvas').forEach(n=>n.remove());
-    container.appendChild(renderer.domElement);
-
-    // создаём сферу — геометрия и материал
-    const geometry = new THREE.SphereGeometry(1, 64, 64);
-
-    // материал: смесь зеркального и шейдера для глубины
-    const material = new THREE.MeshStandardMaterial({
-      color: 0x88ff66,
-      metalness: 0.2,
-      roughness: 0.3,
-      emissive: 0x113322,
-      emissiveIntensity: 0.4
+  el.tasksList.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const id = btn.dataset.id;
+      const done = btn.dataset.done === '1';
+      if(done) return;
+      await markTaskDone(id);
     });
+  });
+}
 
-    const sphere = new THREE.Mesh(geometry, material);
-    scene.add(sphere);
+el.btnCreateTask.addEventListener('click', async () => {
+  const title = prompt('Название задания (коротко):');
+  const pts = parseInt(prompt('Сколько очков даёт за выполнение? (число)', '10')) || 10;
+  if(!title) return;
+  try {
+    const payload = { owner_id: state.user.id, title, points: pts };
+    const { data, error } = await supabase.from('tasks').insert([payload]).select();
+    if(error) throw error;
+    await loadTasks();
+  } catch(e) {
+    console.warn('create task fallback', e);
+    const users = JSON.parse(localStorage.getItem('demo_users_v1') || '{}');
+    const id = 't_' + Date.now();
+    const t = { id, owner_id: state.user.id, title, points: pts, done: false, created_at: new Date().toISOString() };
+    users[state.user.id] = users[state.user.id] || { tasks: {} };
+    users[state.user.id].tasks = users[state.user.id].tasks || {};
+    users[state.user.id].tasks[id] = t;
+    localStorage.setItem('demo_users_v1', JSON.stringify(users));
+    loadTasks();
+  }
+});
 
-    // добавим окружение света и направленный свет
-    const hemi = new THREE.HemisphereLight(0xffffff, 0x080820, 0.6);
-    scene.add(hemi);
-    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-    dir.position.set(5,5,5);
-    scene.add(dir);
+async function markTaskDone(taskId) {
+  try {
+    const { data: task } = await supabase.from('tasks').select('*').eq('id', taskId).single();
+    if(!task) throw new Error('task missing');
+    if(task.done) return;
 
-    // создаём лёгкую анимацию (плавное вращение)
-    let targetRotationX = 0, targetRotationY = 0;
-    let currentRotationX = 0, currentRotationY = 0;
+    const { data:update, error:updateError } = await supabase.from('tasks').update({ done: true }).eq('id', taskId);
+    if(updateError) throw updateError;
 
-    // интерактивность: pointer events для вращения
-    let isDown=false, startX=0, startY=0;
-    renderer.domElement.addEventListener('pointerdown', (e)=>{ isDown=true; startX=e.clientX; startY=e.clientY; renderer.domElement.setPointerCapture(e.pointerId); });
-    renderer.domElement.addEventListener('pointermove', (e)=>{ if(!isDown) return; const dx=e.clientX-startX, dy=e.clientY-startY; startX=e.clientX; startY=e.clientY; targetRotationY += dx * 0.01; targetRotationX += dy * 0.01; });
-    renderer.domElement.addEventListener('pointerup', (e)=>{ isDown=false; renderer.domElement.releasePointerCapture(e.pointerId); });
-    renderer.domElement.addEventListener('pointerleave', ()=>{ isDown=false; });
-
-    // обработка ресайза: пересчитаем размеры и камеру
-    function onResize(){ const w = container.clientWidth, h = container.clientHeight; renderer.setSize(w,h); camera.aspect = w/h; camera.updateProjectionMatrix(); }
-    window.addEventListener('resize', onResize);
-
-    // render loop
-    function animate(){
-      requestAnimationFrame(animate);
-      // сглаживание поворота (инерция)
-      currentRotationX += (targetRotationX - currentRotationX) * 0.08;
-      currentRotationY += (targetRotationY - currentRotationY) * 0.08;
-      sphere.rotation.x = currentRotationX;
-      sphere.rotation.y = currentRotationY + performance.now() * 0.0001; // тонкая авто-вращение
-      renderer.render(scene, camera);
+    const delta = task.points || 0;
+    try {
+      await supabase.rpc('add_points', { user_id_param: state.user.id, delta_param: delta });
+    } catch(rpcErr) {
+      console.warn('rpc failed', rpcErr);
+      await supabase.from('profiles').update({ points: (state.user.points || 0) + delta }).eq('id', state.user.id);
     }
-    animate();
 
-    // стартовая подгонка размеров
-    onResize();
-  })();
+    const { data: profile } = await supabase.from('profiles').select('*').eq('id', state.user.id).single();
+    if(profile) {
+      state.user = profile;
+      el.pointsLabel.textContent = 'Очки: ' + (profile.points || 0);
+      el.levelLabel.textContent = 'Уровень: ' + (profile.level || 0);
+    }
+    await loadTasks();
+  } catch(e) {
+    console.error('markTaskDone error', e);
+    alert('Ошибка при выполнении задания');
+  }
+}
 
-  // -------------------- Запуск init UI --------------------
-  refreshProfileUI();
+async function loadLeaderboardPreview() {
+  try {
+    const { data, error } = await supabase.from('profiles').select('id,username,points,level').order('points', { ascending: false }).limit(5);
+    if(error) throw error;
+    renderLeaderboardPreview(data || []);
+  } catch(e) {
+    console.warn('leaderboard preview failed', e);
+  }
+}
 
-  </script>
+function renderLeaderboardPreview(rows) {
+  el.leaderboardPreview.innerHTML = '';
+  rows.forEach(r => {
+    const div = document.createElement('div');
+    div.className = 'leader-row';
+    div.innerHTML = `<div style="font-weight:800">${r.username||r.email||'—'}</div><div style="color:var(--muted)">${r.points||0} pts • L:${r.level||0}</div>`;
+    el.leaderboardPreview.appendChild(div);
+  });
+}
+
+async function loadLeaderboardFull() {
+  try {
+    const { data, error } = await supabase.from('profiles').select('id,username,points,level').order('points', { ascending: false });
+    if(error) throw error;
+    renderLeaderboardFull(data || []);
+  } catch(e) {
+    console.warn('leaderboard full failed', e);
+    alert('Не удалось загрузить лидерборд');
+  }
+}
+
+function renderLeaderboardFull(rows) {
+  const list = el.leaderboardList;
+  list.innerHTML = '';
+  rows.forEach((r, idx) => {
+    const row = document.createElement('div');
+    row.className = 'leader-row';
+    row.innerHTML = `<div style="display:flex;gap:12px;align-items:center;"><div style="font-weight:900">${idx+1}.</div><div style="font-weight:800">${r.username||r.email||'—'}</div></div><div style="color:var(--muted)">${r.points||0} pts • L:${r.level||0}</div>`;
+    list.appendChild(row);
+  });
+}
+
+function subscribeProfilesRealtime() {
+  try {
+    const channel = supabase.channel('public:profiles')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, payload => {
+        loadLeaderboardPreview();
+        const newRow = payload.new;
+        if(newRow && state.user && newRow.id === state.user.id) {
+          state.user.points = newRow.points;
+          state.user.level = newRow.level;
+          el.pointsLabel.textContent = 'Очки: ' + (newRow.points || 0);
+          el.levelLabel.textContent = 'Уровень: ' + (newRow.level || 0);
+        }
+      })
+      .subscribe();
+  } catch(e) {
+    console.warn('subscribeProfilesRealtime failed', e);
+  }
+}
+
+el.btnLogout.addEventListener('click', async () => {
+  try { await supabase.auth.signOut(); } catch(e) { console.warn('signOut failed', e); }
+  state.user = null;
+  document.getElementById('screenApp').classList.remove('active');
+  document.getElementById('screenRegister').classList.add('active');
+  document.getElementById('screenRegister').setAttribute('aria-hidden', 'false');
+});
+
+el.btnLeaderboard.addEventListener('click', async () => {
+  await loadLeaderboardFull();
+  showLeaderboardScreen();
+});
+el.backToApp.addEventListener('click', () => { hideLeaderboardScreen(); });
+
+subscribeProfilesRealtime();
+loadLeaderboardPreview();
+
+</script>
 </body>
 </html>
